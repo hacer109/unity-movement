@@ -1,8 +1,10 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 using UnityEngine.Experimental.AI;
+using UnityEngine.UIElements;
 using static UnityEditor.PlayerSettings;
 
 public class PlayerMovement : MonoBehaviour
@@ -11,13 +13,17 @@ public class PlayerMovement : MonoBehaviour
    public Rigidbody rb;
     float m_horizontal;
     float m_vertical;
-    public float m_speed;
-   // public BoxCollider BoundingBox;
+    private float m_speed;
+   
     public float RayDistanceSlope;
     public float RayDistance;
     public float MaxSlopeAngle;
+    public float crouchSpeed;
+    public float walkSpeed;
+    public float sprintSpeed;
     RaycastHit slopeHit;
     RaycastHit Hit;
+    Vector3 PlayerScale;
     [SerializeField] private bool onSlope;
     [SerializeField] private bool onGround;
     Vector3 ABSnormal;
@@ -26,110 +32,168 @@ public class PlayerMovement : MonoBehaviour
     [SerializeField] float m_JumpForce;
     RaycastHit ColisionHit;
     [SerializeField] CapsuleCollider colider;
+    [SerializeField] float RayCheckAbove;
+    [SerializeField]bool GroundCheckGravity;
+    [SerializeField] float Raydist2;
+    [SerializeField] bool objectAbovePlayer;
     bool isGrounded;
+    float gravity = -9.81f;
+    float defaultRayDist;
+    
+
+    public enum PlayerState
+    {
+        Crouched,
+        Air,
+        Walk,
+        Sprint
+    }
+    PlayerState state;
+
+
+    void PlayerMovementState()
+    {
+        objectAbovePlayer = CheckAbovePlayer(out RaycastHit UpHit);
+
+        if (Input.GetKeyDown(KeyCode.LeftControl))
+        {
+            RayDistance /= 7;
+         
+            
+           //     m_speed = crouchSpeed;
+            
+            state = PlayerState.Crouched;
+            
+            transform.localScale = new Vector3(PlayerScale.x, PlayerScale.y / 2, PlayerScale.z);
+        }
+
+        if (!objectAbovePlayer && Input.GetKey(KeyCode.LeftControl) == false && state == PlayerState.Crouched)
+        {
+            RayDistance = defaultRayDist;
+            state = PlayerState.Walk;
+           
+            
+           //     m_speed = walkSpeed;
+            
+            
+            transform.localScale = PlayerScale;
+        }
+
+        if (Input.GetKeyDown(KeyCode.LeftShift) && state == PlayerState.Walk && state != PlayerState.Crouched)
+        {
+            state = PlayerState.Sprint;
+          //  m_speed = sprintSpeed;
+        }
+        if (Input.GetKeyUp(KeyCode.LeftShift) && state == PlayerState.Sprint)
+        {
+            state = PlayerState.Walk;
+          //  m_speed = walkSpeed;
+        }
+
+        switch(state)
+        {
+            case PlayerState.Sprint:
+                m_speed = sprintSpeed;
+
+                break;
+
+                case PlayerState.Walk:
+                m_speed = walkSpeed;
+                break;
+
+                case PlayerState.Crouched: 
+                if (isGrounded)
+                {
+
+                    m_speed = crouchSpeed;
+                }
+                else
+                {
+
+                   
+                }
+                break;
+        }
+
+
+    }
     void Start()
     {
-      //  rb = GetComponentInParent<Rigidbody>();
+      
       colider = GetComponent<CapsuleCollider>();
+     PlayerScale = transform.localScale;
+        defaultRayDist = RayDistance;
+        m_speed = walkSpeed;
+        
     }
 
     Bounds bounds;
+    bool IsMoving;
+
+    public float tempFloat;
     void Update()
     {
+
+
+       
+        GroundCheckGravity = Physics.Raycast(transform.position, Vector3.down, Raydist2);
        // Debug.Log(rb.position);
          bounds = colider.bounds;
         bounds.Expand(-2 * skinWidth);
-        IsGround();
+        (bool onGround, float groundAngle) = IsGround(out RaycastHit groundHit);
+        bool falling = !(onGround && groundAngle <= 60f);
         WishDir = DirectionalLook.WishDir;
         onSlope = OnSlope();
-        //SpeedControl();
+        isGrounded = !falling;
+        PlayerMovementState();
 
-     /*   if (Physics.Raycast(transform.position, WishDir.normalized, out ColisionHit, WishDir.magnitude, GroundLayer))
-        {
-            WishDir = WishDir.normalized * ColisionHit.distance;
-        }*/
 
-    }
-    private void FixedUpdate()
-    {
-        // rb.MovePosition(rb.position+ GetMoveDirection().normalized * Time.fixedDeltaTime * m_speed);
-        // rb.MovePosition(GetMoveDirection(WishDir).normalized);
-        rb.MovePosition(GetMoveDirection(WishDir * Time.fixedDeltaTime * m_speed));
-      //  transform.position = GetMoveDirection(WishDir * Time.fixedDeltaTime * m_speed) ;
-       // rb.MovePosition(PlayerMove(WishDir));
-       // Move(WishDir);
-         //rb.AddForce(GetMoveDirection() * m_speed, ForceMode.Force);
-        //Debug.Log(rb.velocity.ToString());
-        IsGround();
-        Jump();
-        //SpeedControl();
-        
-    }
-    void IsGround()
-    {
-        
-        onGround = Physics.Raycast(new Vector3(BBContact.x,rb.position.y - 1,BBContact.z),Vector3.down,out Hit,RayDistance);
-        /* if(onSlope)
+
+        if (onSlope)
         {
-            onGround = Physics.Raycast(transform.position, Vector3.down, out slopeHit, RayDistanceSlope, GroundLayer);
+            WishDir = Vector3.ProjectOnPlane(WishDir, slopeHit.normal);
+        }
+
+        if (Input.GetAxisRaw("Horizontal") == 0 && Input.GetAxisRaw("Vertical") == 0 && isGrounded)
+        {
+            IsMoving = false;
         }
         else
         {
-            onGround = Physics.Raycast(transform.position, Vector3.down, out Hit, RayDistance, GroundLayer);
-        }*/
+            IsMoving = true;
+        }
+       
+    }
+
+
+    float GravityVelocity;
+    private void FixedUpdate()
+    {
+
+        rb.MovePosition(GetMoveDirection(WishDir * Time.fixedDeltaTime * m_speed));
+       // rb.AddForce(WishDir * m_speed,ForceMode.Force);
         
+
+        
+        Jump();
+     
+        
+    }
+    (bool,float) IsGround(out RaycastHit GroundHit)
+    {
+
+        onGround = CastSelf(transform.position, transform.rotation, Vector3.down, RayDistance, out GroundHit);
+        float angle = Vector3.Angle(GroundHit.normal, Vector3.up);
+       return (onGround, angle); 
     }
    
    public float CheckDist;
-
-    Vector3 PlayerMove(Vector3 WishDir)
+    bool CheckAbovePlayer(out RaycastHit UpHit)
     {
-        Vector3 position = rb.position;
-        Vector3 remaining = WishDir;
-        Quaternion rotation = transform.rotation;
-        int bounces = 0;
-        while (bounces < maxBounces && remaining.magnitude > 0.001f)
-        {
-            float distance = remaining.magnitude;
-            RaycastHit test;
-            if (!Physics.CapsuleCast(rb.position + posY1, rb.position + posY2, bounds.extents.x, remaining.normalized, out test, CheckDist, GroundLayer))
-            {
-                position += remaining;
-                break;
-            }
-            if(test.distance == 0)
-            {
-                break;
-            }
-
-            float fraction = test.distance / distance;
-
-            position += (remaining * fraction);
-            position += (test.normal * 0.001f * 2);
-            remaining *= (1 - fraction);
-
-            Vector3 planeNormal = test.normal;
-            float angleBetween = Vector3.Angle(test.normal, remaining) - 90.0f;
-
-            angleBetween = Mathf.Min(180.0f - 120.0f,Mathf.Abs(angleBetween));
-            float normalizedAngle = angleBetween / (180.0f - 120.0f);
-            float anglePower = 0.5f;
-            remaining *= Mathf.Pow(1 - normalizedAngle, anglePower) * 0.9f + 0.1f;
-
-            Vector3 projected = Vector3.ProjectOnPlane(remaining, planeNormal).normalized * remaining.magnitude;
-
-            if(projected.magnitude + 0.001f < remaining.magnitude)
-            {
-                remaining = Vector3.ProjectOnPlane(remaining,Vector3.up).normalized * remaining.magnitude;
-            }
-            else
-            {
-                remaining = projected;
-            }
-            bounces++;
-        }
-        return position;
+        bool aboveDetect = CastSelf(transform.position,transform.rotation,Vector3.up, RayCheckAbove, out UpHit);
+        return aboveDetect;
     }
+   
     Vector3 GetMoveDirection(Vector3 movement)
     {
         // CheckDist = WishDir.magnitude + skinWidth;
@@ -180,46 +244,8 @@ public class PlayerMovement : MonoBehaviour
         }
         return position;
         
-        
-        
-       /* if (!Physics.CapsuleCast(rb.position + posY1, rb.position + posY2, bounds.extents.x, remaining.normalized, out test, RaycastDistance, GroundLayer))
-        {
-            return remaining;
-
-        }
        
-        
-        
-        
-
-         if(test.distance == 0)
-         {
-            return Vector3.zero;
-            //return Vector3.ProjectOnPlane(remaining,test.normal).normalized;
-         }*/
-
-        //return position + remaining;
-        /*  if (onSlope)
-          {
-              position = Vector3.ProjectOnPlane(remaining, test.normal).normalized;
-          }
-          else
-          {
-              position = Vector3.ProjectOnPlane(remaining, test.normal).normalized;
-          }*/
-
-        //  return Vector3.ProjectOnPlane(remaining, test.normal);
-     //   return remaining;
-
-  /*          if (onSlope)
-        {
-            return Vector3.ProjectOnPlane(WishDir, slopeHit.normal);
-        }
-        else
-        {
-            return Vector3.ProjectOnPlane(WishDir, Hit.normal);
-        }*/
-        
+      
         
     }
 
@@ -235,9 +261,7 @@ public class PlayerMovement : MonoBehaviour
         Vector3 top = center + rot * Vector3.up * (height / 2 - radius);
 
         // Check what objects this collider will hit when cast with this configuration excluding itself
-        IEnumerable<RaycastHit> hits = Physics.CapsuleCastAll(
-            top, bottom, radius, dir, dist, ~0, QueryTriggerInteraction.Ignore)
-            .Where(hit => hit.collider.transform != transform);
+        IEnumerable<RaycastHit> hits = Physics.CapsuleCastAll(top, bottom, radius, dir, dist, ~0, QueryTriggerInteraction.Ignore).Where(hit => hit.collider.transform != transform); // layer ~0
         bool didHit = hits.Count() > 0;
 
         // Find the closest objects hit
@@ -291,42 +315,34 @@ public class PlayerMovement : MonoBehaviour
   
 
     
-    public float snapDist;
-    void SnapPlayerToGround()
-    {
-
-        if(onSlope)
-        {
-            Vector3 temp = rb.position;
-            temp.y = slopeHit.point.y+ snapDist;
-            // temp.y = BoxContact.y+1;
-            rb.position = temp;
-        }
-        else if (onGround)
-        {
-            Vector3 temp = rb.position;
-            temp.y = Hit.point.y ;
-            // temp.y = BoxContact.y+1;
-            rb.position = temp;
-        }
-        
-
-
-        
-    }
+    
    
-        private void OnCollisionStay(Collision collision)
+    [SerializeField] float forceMagnitude;
+
+    
+    private void OnCollisionStay(Collision collision)
     {
-       
-       BBContact = collision.contacts[0].point;
-        //SnapPlayerToGround();
+
+        Rigidbody rigidbody = collision.collider.attachedRigidbody;
+        if (rigidbody != null && IsMoving == true)//&& Vector3.Dot(collision.contacts[0].normal,Vector3.up) == 1)
+        {
+
+            Vector3 PushForceDir = collision.gameObject.transform.position - transform.position;
+            PushForceDir.y = 0;
+            PushForceDir.Normalize();
+            rigidbody.AddForceAtPosition(PushForceDir * forceMagnitude, collision.contacts[0].point, ForceMode.Impulse);
+        }
+
+
+        BBContact = collision.contacts[0].point;
+       // SnapPlayerToGround();
     }
     private void OnCollisionExit(Collision collision)
     {
         BBContact = Vector3.zero;
     }
 
-    //This handles collisions based on a tutorial,reason for removal is because its too glitchy on certain object,while yes it does improve collisions when speed is high the tradeoff is not worth it
+    
 
       int maxBounces = 5;
       float skinWidth = 0.015f;
