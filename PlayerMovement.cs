@@ -10,6 +10,8 @@ using static UnityEditor.PlayerSettings;
 public class PlayerMovement : MonoBehaviour
 {
     Vector3 WishDir;
+    Vector3 Velocity;
+    float WishSpeed;
    public Rigidbody rb;
     float m_horizontal;
     float m_vertical;
@@ -50,7 +52,7 @@ public class PlayerMovement : MonoBehaviour
     }
     PlayerState state;
 
-
+    
     void PlayerMovementState()
     {
         objectAbovePlayer = CheckAbovePlayer(out RaycastHit UpHit);
@@ -124,17 +126,61 @@ public class PlayerMovement : MonoBehaviour
      PlayerScale = transform.localScale;
         defaultRayDist = RayDistance;
         m_speed = walkSpeed;
-        
+        Velocity = Vector3.zero;
     }
+   [SerializeField] float friction;
+    [SerializeField] float groundAccel;
+    [SerializeField] float maxGroundAccel;
+    [SerializeField] float airAccel;
+    [SerializeField] float maxAirAccel;
+    
+
 
     Bounds bounds;
     bool IsMoving;
 
     public float tempFloat;
+
+    void AirAcceleration(Vector3 wishDir,float accel,float wishSpeed)
+    {
+        
+        
+        float currentspeed = Vector3.Dot(Velocity, wishDir);
+        Debug.Log(currentspeed);
+        if(currentspeed > MaxAirWishSpeed)
+        {
+            currentspeed = MaxAirWishSpeed;
+        }
+        float addSpeed = wishSpeed - currentspeed;
+        if (addSpeed <= 0)
+        {
+            return;
+        }
+        float AirAccelerate = accel * wishSpeed * Time.fixedDeltaTime; 
+        if (AirAccelerate > addSpeed)
+        {
+            AirAccelerate = addSpeed;
+        }
+        Velocity += AirAccelerate * wishDir;
+        
+       
+    }
+    void Moveplayer()
+    {
+        Vector3 wishdir = WishDir * m_speed;
+       // wishdir.Normalize();
+        //wishdir = transform.TransformDirection(wishdir);
+        float wishSpeed = wishdir.magnitude;
+        wishSpeed = m_speed;
+        Velocity = WishDir;
+        
+       AirAcceleration(wishdir, airAccel,wishSpeed);
+       
+    }
     void Update()
     {
 
-
+        
        
         GroundCheckGravity = Physics.Raycast(transform.position, Vector3.down, Raydist2);
        // Debug.Log(rb.position);
@@ -143,11 +189,14 @@ public class PlayerMovement : MonoBehaviour
         (bool onGround, float groundAngle) = IsGround(out RaycastHit groundHit);
         bool falling = !(onGround && groundAngle <= 60f);
         WishDir = DirectionalLook.WishDir;
+        Moveplayer();
+       
+        WishSpeed = WishDir.magnitude;
         onSlope = OnSlope();
         isGrounded = !falling;
         PlayerMovementState();
-
-
+        
+        
 
         if (onSlope)
         {
@@ -162,19 +211,26 @@ public class PlayerMovement : MonoBehaviour
         {
             IsMoving = true;
         }
+
        
     }
-
+    public float MaxAirWishSpeed;
+    
 
     float GravityVelocity;
     private void FixedUpdate()
     {
 
-        rb.MovePosition(GetMoveDirection(WishDir * Time.fixedDeltaTime * m_speed));
-       // rb.AddForce(WishDir * m_speed,ForceMode.Force);
-        
+        rb.MovePosition(GetMoveDirection(Velocity * Time.fixedDeltaTime));
 
-        
+
+
+
+
+        // rb.AddForce(WishDir * m_speed,ForceMode.Force);
+
+
+
         Jump();
      
         
